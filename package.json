@@ -1,0 +1,19 @@
+{
+  "name": "repro-agent",
+  "version": "1.0.0",
+  "description": "ML Paper Reproduction Agent — powered by Pi SDK",
+  "keywords": ["pi-package", "ml-reproducibility", "ai-agent"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
+  "scripts": {
+    "start": "python server.py",
+    "dev": "uvicorn server:app --reload --port 8000"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
