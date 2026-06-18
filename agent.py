@@ -198,7 +198,10 @@ class ReproductionAgent:
         python_ver = env.get("Python", "") or "3.10"
         if python_ver.lower() in _na:
             python_ver = "3.10"
+        _bad_cuda = {"", "none", "n/a", "no", "null", "unknown", "—", "-"}
         cuda_ver = env.get("CUDA", "") or ""
+        if cuda_ver.lower() in _bad_cuda:
+            cuda_ver = "11.8"
         cudnn = (env.get("cuDNN", "8") or "8").split(".")[0]
         cuda_nd = cuda_ver.replace(".", "")
 

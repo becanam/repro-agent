@@ -191,9 +191,8 @@ async def analyze(req: AnalyzeRequest):
         deps = result.get("dependencies", [])
         cuda = env.get("CUDA", "")
         _no_cuda = {"none", "", "n/a", "no", "null", "unknown", "—", "-"}
-        has_torch = any(d["name"] == "torch" for d in deps)
         if cuda.lower() in _no_cuda:
-            variant = "cuda" if has_torch else "cpu"
+            variant = "cpu"
         else:
             variant = "cuda"
 
