@@ -217,14 +217,14 @@ class ReproductionAgent:
 
         entries = analysis.get("entry_points", [])
         real_paths = analysis.get("_repo_paths", [])
-        root_files = {p for p in real_paths if "/" not in p}
-        # validate LLM's suggestion against actual repo files
-        entry = next((e for e in entries if e in root_files), None)
-        if not entry:
-            for candidate in ["train.py", "main.py", "run.py", "test.py", "demo.py", "eval.py"]:
-                if candidate in root_files:
-                    entry = candidate
-                    break
+        real_py = [p for p in real_paths if p.endswith(".py") and "__init__" not in p and "setup.py" != p]
+        # validate LLM's entry point against actual repo files; fall back to any runnable .py
+        entry = next((e for e in entries if e in real_paths), None)
+        if not entry and real_py:
+            # prefer root-level, then test/, then anything
+            entry = next((p for p in real_py if "/" not in p), None) or \
+                    next((p for p in real_py if p.startswith("test")), None) or \
+                    real_py[0]
         entry = entry or (entries[0] if entries else "train.py")
         name = repo.split("/")[-1].lower()
 
@@ -473,7 +473,7 @@ Return a single JSON object with ALL of these fields:
     {{"t": "entry", "txt": "train.py", "indent": 1, "tag": "entry"}},
     {{"t": "file", "txt": "config.yaml", "indent": 1, "tag": null}}
   ],
-  "entry_points": ["train.py"],
+  "entry_points": ["<actual file from the file paths list above — must exist>"],
   "run_procedure": [
     {{
       "title": "Build the image",
