@@ -295,9 +295,9 @@ class ReproductionAgent:
             "dockerfile": dockerfile,
             "build_cmd": f"docker build -t {name}:repro .",
             "run_cmd": (
-                f"docker run -v /data:/data {name}:repro"
+                f"docker run {name}:repro"
                 if variant == "cpu"
-                else f"docker run --gpus all -v /data:/data {name}:repro"
+                else f"docker run --gpus all {name}:repro"
             ),
             "stats": {
                 "base_image": base,
