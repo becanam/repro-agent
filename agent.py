@@ -237,7 +237,8 @@ class ReproductionAgent:
         else:
             # use devel only when the repo compiles custom CUDA extensions
             cuda_layer = "devel" if ".cu" in file_txts else "runtime"
-            base = f"nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-{cuda_layer}-ubuntu22.04"
+            # --platform linux/amd64: CUDA wheels are x86_64 only (required on Apple Silicon)
+            base = f"--platform linux/amd64 nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-{cuda_layer}-ubuntu22.04"
             torch_install = (
                 f"RUN pip install torch=={torch_ver}+cu{cuda_nd} \\\n"
                 f"      --index-url https://download.pytorch.org/whl/cu{cuda_nd}"
@@ -481,7 +482,11 @@ Return a single JSON object with ALL of these fields:
   ]
 }}
 
-IMPORTANT: analyze the actual README and file list above; don't make up data.
+IMPORTANT:
+- Analyze the actual README and file list above; do NOT make up data.
+- Only set CUDA version if it is explicitly mentioned in the README or requirements.txt. If not mentioned, set {{"k":"CUDA","v":"none"}}.
+- Only list a dependency if it appears in requirements.txt, setup.py, or environment.yml. Do NOT infer deps from import statements.
+- Dependency versions must be exact (e.g. "1.26.4"), never fuzzy (e.g. "1.26.x", "latest", "auto").
 Return only valid JSON."""
         text = self._strip_json(await self._llm([{"role": "user", "content": prompt}], max_tokens=4096))
         try:
