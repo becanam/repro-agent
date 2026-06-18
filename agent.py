@@ -231,11 +231,18 @@ class ReproductionAgent:
 
         # python:X.Y-slim images already have Python installed — only need git + pip
         # nvidia/cuda images need python to be installed explicitly
+        dep_names = {d["name"].lower() for d in deps}
+        extra_apt = []
+        if "tkinter" in dep_names or "tk" in dep_names:
+            extra_apt.append("python3-tk")
+        if any(n in dep_names for n in ("cv2", "opencv-python", "opencv-python-headless")):
+            extra_apt.append("libgl1 libglib2.0-0")
+
         if variant == "cpu":
-            apt_pkgs = "python3-pip git"
+            apt_pkgs = "python3-pip git" + (" " + " ".join(extra_apt) if extra_apt else "")
             py_cmd = "python3"
         else:
-            apt_pkgs = f"python{python_ver} python3-pip git"
+            apt_pkgs = f"python{python_ver} python3-pip git" + (" " + " ".join(extra_apt) if extra_apt else "")
             py_cmd = f"python{python_ver}"
 
         lines = [
