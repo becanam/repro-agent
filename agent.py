@@ -215,8 +215,17 @@ class ReproductionAgent:
         tv_ver = tv_dep["ver"].split("+")[0] if tv_dep else None
         other_deps = [d for d in deps if d["name"] not in ("torch", "torchvision")]
 
-        entries = analysis.get("entry_points", ["train.py"])
-        entry = entries[0] if entries else "train.py"
+        entries = analysis.get("entry_points", [])
+        real_paths = analysis.get("_repo_paths", [])
+        root_files = {p for p in real_paths if "/" not in p}
+        # validate LLM's suggestion against actual repo files
+        entry = next((e for e in entries if e in root_files), None)
+        if not entry:
+            for candidate in ["train.py", "main.py", "run.py", "test.py", "demo.py", "eval.py"]:
+                if candidate in root_files:
+                    entry = candidate
+                    break
+        entry = entry or (entries[0] if entries else "train.py")
         name = repo.split("/")[-1].lower()
 
         file_txts = " ".join(n.get("txt", "") for n in analysis.get("file_tree", []))
