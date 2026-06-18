@@ -2,6 +2,29 @@
 const { useState, useEffect, useRef } = React;
 const { Icon, Tag, Btn } = window;
 
+function parseMarkdown(md) {
+  const fmt = s => s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const lines = md.split('\n');
+  const out = [];
+  let inList = false;
+  for (const line of lines) {
+    const li = line.match(/^[-*] (.+)/);
+    if (li) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + fmt(li[1]) + '</li>');
+    } else {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const t = line.trim();
+      if (t) out.push('<p>' + fmt(t) + '</p>');
+    }
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
 const API_BASE = window.REPRO_API_BASE || "";
 const STORAGE_KEY = "repro_sessions";
 
@@ -21,7 +44,7 @@ function deleteSession(id) {
 // ── API helpers ──────────────────────────────────────────────────────────────
 async function apiAnalyze(source, value) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90000);
+  const timer = setTimeout(() => controller.abort(), 150000);
   try {
     const r = await fetch(`${API_BASE}/api/analyze`, {
       method: "POST",
@@ -350,6 +373,115 @@ function AnalyzingView({ source, value, onDone }) {
   );
 }
 
+// ── Hardware Panel ───────────────────────────────────────────────────────────
+const SETUP_LABELS = {
+  no_gpu:       { icon: "cpu",    label: "No GPU" },
+  consumer_gpu: { icon: "bolt",   label: "Consumer GPU" },
+  cloud:        { icon: "cloud",  label: "Cloud" },
+  pro_gpu:      { icon: "server", label: "Pro / HPC GPU" },
+};
+
+function HardwarePanel({ hw }) {
+  const [setup, setSetup] = useState(null);
+  if (!hw) return null;
+
+  const chosen = setup ? hw.setups[setup] : null;
+
+  return (
+    <div className="rail-sec" style={{ paddingBottom: 16 }}>
+      <div className="rail-label">Hardware</div>
+
+      {/* spec summary */}
+      <div style={{ padding: "4px 4px 8px", display: "flex", flexDirection: "column", gap: 4 }}>
+        {hw.needs_gpu && (
+          <div className="env-row">
+            <span className="env-k">GPU VRAM</span>
+            <span className="env-v" style={{ color: hw.min_vram_gb >= 40 ? "var(--red)" : "var(--amber)" }}>
+              {hw.min_vram_gb}GB min
+            </span>
+          </div>
+        )}
+        <div className="env-row">
+          <span className="env-k">RAM</span>
+          <span className="env-v">{hw.min_ram_gb}GB+</span>
+        </div>
+        <div className="env-row">
+          <span className="env-k">Storage</span>
+          <span className="env-v">{hw.min_storage_gb}GB+</span>
+        </div>
+        {hw.est_train_hours > 0 && (
+          <div className="env-row">
+            <span className="env-k">Est. runtime</span>
+            <span className="env-v">~{hw.est_train_hours}h</span>
+          </div>
+        )}
+      </div>
+
+      {/* setup picker */}
+      <div style={{ fontSize: 11, color: "var(--muted)", padding: "0 4px 6px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        What&apos;s your setup?
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "0 2px" }}>
+        {Object.entries(SETUP_LABELS).map(([key, { icon, label }]) => (
+          <button key={key}
+            onClick={() => setSetup(setup === key ? null : key)}
+            style={{
+              background: setup === key ? "var(--accent)" : "var(--surface2)",
+              color: setup === key ? "#fff" : "var(--text)",
+              border: "1px solid " + (setup === key ? "var(--accent)" : "var(--border)"),
+              borderRadius: 6, padding: "5px 6px", fontSize: 11, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4, fontWeight: setup === key ? 600 : 400,
+            }}>
+            <Icon name={icon} size={12} sw={1.8} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* recommendation */}
+      {chosen && (
+        <div style={{ margin: "8px 2px 0", background: "var(--surface2)", borderRadius: 8, padding: "10px 10px 8px", border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
+              background: chosen.feasible ? "var(--accent)" : "#e04444",
+              color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em",
+            }}>{chosen.verdict}</span>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>{chosen.notes}</p>
+
+          {/* cloud options table */}
+          {setup === "cloud" && chosen.options && (
+            <div style={{ marginBottom: 8 }}>
+              {chosen.options.map((opt, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{opt.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{opt.vram}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 12, color: "var(--accent)" }}>{opt.cost}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* steps */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {(chosen.steps || []).filter(Boolean).map((step, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--text)" }}>
+                <span style={{ color: "var(--accent)", fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
+                <span style={{ lineHeight: 1.5 }}>{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── File Viewer ──────────────────────────────────────────────────────────────
 const FILE_ICONS = {
   "Dockerfile": "cube",
@@ -370,13 +502,21 @@ function FileViewer({ session, onBack }) {
     setTimeout(() => setCopied(false), 1400);
   };
 
+  const triggerDownload = (name, content) => {
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const downloadAll = () => {
-    fileNames.forEach(name => {
-      const blob = new Blob([files[name]], { type: "text/plain" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
+    fileNames.forEach((name, i) => {
+      setTimeout(() => triggerDownload(name, files[name]), i * 150);
     });
   };
 
@@ -422,12 +562,17 @@ function FileViewer({ session, onBack }) {
           <div className="rail-sec">
             <div className="rail-label">Environment</div>
             <div style={{ padding: "2px 4px" }}>
-              {(session.env_spec || []).map((e, i) => (
-                <div className="env-row" key={i}>
-                  <span className="env-k">{e.k}</span>
-                  <span className="env-v">{e.v}</span>
-                </div>
-              ))}
+              {(() => {
+                const NA = ["n/a", "none", "null", "unknown", "", "—", "-"];
+                const known = (session.env_spec || []).filter(e => e.v && !NA.includes(String(e.v).toLowerCase()));
+                if (known.length === 0) return <div style={{ fontSize: 12, color: "var(--muted)", padding: "2px 0" }}>Not specified in repo</div>;
+                return known.map((e, i) => (
+                  <div className="env-row" key={i}>
+                    <span className="env-k">{e.k}</span>
+                    <span className="env-v">{e.v}</span>
+                  </div>
+                ));
+              })()}
             </div>
           </div>
 
@@ -435,6 +580,7 @@ function FileViewer({ session, onBack }) {
 
           <div className="rail-sec" style={{ paddingBottom: 16 }}>
             <div className="rail-label">Risks</div>
+            {risks.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 4px" }}>None detected</div>}
             {risks.map((r, i) => (
               <div key={i} className="risk-mini">
                 <span className={"risk-dot sev-dot-" + (r.sev === "high" ? "high" : r.sev === "medium" ? "med" : "low")} />
@@ -442,6 +588,10 @@ function FileViewer({ session, onBack }) {
               </div>
             ))}
           </div>
+
+          <div style={{ borderTop: "1px solid var(--border)" }} />
+
+          <HardwarePanel hw={session.hardware_recs} />
         </div>
 
         {/* center: file content */}
@@ -454,10 +604,7 @@ function FileViewer({ session, onBack }) {
               </div>
               <div className="flex gap8">
                 <Btn sm icon={copied ? "check" : "copy"} onClick={copy}>{copied ? "Copied" : "Copy"}</Btn>
-                <Btn sm icon="ext" onClick={() => {
-                  const blob = new Blob([files[active]], { type: "text/plain" });
-                  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = active; a.click();
-                }}>Download</Btn>
+                <Btn sm icon="ext" onClick={() => triggerDownload(active, files[active])}>Download</Btn>
               </div>
             </div>
             <FileContent name={active} content={files[active] || ""} />
@@ -583,7 +730,7 @@ function Message({ m }) {
       </div>
       <div className="msg-body">
         {!isUser && <div className="msg-name">Agent</div>}
-        <div className="bubble" dangerouslySetInnerHTML={{ __html: m.text }} />
+        <div className="bubble" dangerouslySetInnerHTML={{ __html: isUser ? m.text : parseMarkdown(m.text) }} />
         {m.card && (
           <div className="bubble-card">
             <div className="bc-head"><Icon name="flask" size={12} sw={2} /> {m.card.head}</div>
@@ -625,9 +772,10 @@ function App() {
       stars: base.paper?.stars || base.stars || "",
       headline: base.paper?.headline || base.headline || "",
       created_at: new Date().toISOString(),
-      files: base.files || MOCK_SESSION.files,
-      risks: base.risks || MOCK_SESSION.risks,
-      env_spec: base.env_spec || MOCK_SESSION.env_spec,
+      files: (base.files && Object.keys(base.files).length > 0) ? base.files : MOCK_SESSION.files,
+      risks: (base.risks && base.risks.length > 0) ? base.risks : [],
+      env_spec: (base.env_spec && base.env_spec.length > 0) ? base.env_spec : MOCK_SESSION.env_spec,
+      hardware_recs: base.hardware_recs || null,
     };
     saveSession(sess);
     setSession(sess);

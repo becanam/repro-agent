@@ -194,15 +194,19 @@ class ReproductionAgent:
         paper = analysis.get("paper", {})
         repo = paper.get("repo", "owner/repo")
 
-        python_ver = env.get("Python", "3.10")
-        cuda_ver = env.get("CUDA", "11.8")
-        cudnn = env.get("cuDNN", "8").split(".")[0]
+        _na = {"", "n/a", "none", "null", "unknown", "N/A"}
+        python_ver = env.get("Python", "") or "3.10"
+        if python_ver.lower() in _na:
+            python_ver = "3.10"
+        cuda_ver = env.get("CUDA", "") or ""
+        cudnn = (env.get("cuDNN", "8") or "8").split(".")[0]
         cuda_nd = cuda_ver.replace(".", "")
 
-        torch_dep = next((d for d in deps if d["name"] == "torch"), None)
-        torch_ver = (torch_dep["ver"].split("+")[0] if torch_dep else "2.1.0")
-        tv_dep = next((d for d in deps if d["name"] == "torchvision"), None)
-        tv_ver = (tv_dep["ver"].split("+")[0] if tv_dep else None)
+        _na = ("", "n/a", "none", "null", "N/A")
+        torch_dep = next((d for d in deps if d["name"] == "torch" and d.get("ver", "") not in _na), None)
+        torch_ver = torch_dep["ver"].split("+")[0] if torch_dep else None
+        tv_dep = next((d for d in deps if d["name"] == "torchvision" and d.get("ver", "") not in _na), None)
+        tv_ver = tv_dep["ver"].split("+")[0] if tv_dep else None
         other_deps = [d for d in deps if d["name"] not in ("torch", "torchvision")]
 
         entries = analysis.get("entry_points", ["train.py"])
@@ -214,28 +218,38 @@ class ReproductionAgent:
             torch_install = (
                 f"RUN pip install torch=={torch_ver}+cpu \\\n"
                 f"      --index-url https://download.pytorch.org/whl/cpu"
-            )
+            ) if torch_ver else None
         else:
             base = f"nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-devel-ubuntu22.04"
             torch_install = (
                 f"RUN pip install torch=={torch_ver}+cu{cuda_nd} \\\n"
                 f"      --index-url https://download.pytorch.org/whl/cu{cuda_nd}"
-            )
+            ) if torch_ver else None
+
+        # python:X.Y-slim images already have Python installed — only need git + pip
+        # nvidia/cuda images need python to be installed explicitly
+        if variant == "cpu":
+            apt_pkgs = "python3-pip git"
+            py_cmd = "python3"
+        else:
+            apt_pkgs = f"python{python_ver} python3-pip git"
+            py_cmd = f"python{python_ver}"
 
         lines = [
             f"FROM {base}",
             "",
-            f"# system packages + Python {python_ver}",
+            f"# system packages",
             "RUN apt-get update && apt-get install -y --no-install-recommends \\",
-            f"      python{python_ver} python3-pip git && \\",
+            f"      {apt_pkgs} && \\",
             "      rm -rf /var/lib/apt/lists/*",
             "",
             "WORKDIR /workspace",
             f"RUN git clone https://github.com/{repo} .",
             "",
-            f"# pinned PyTorch {torch_ver} — matches paper environment",
-            torch_install,
         ]
+
+        if torch_install:
+            lines.append(torch_install)
 
         if tv_ver:
             if variant == "cpu":
@@ -249,20 +263,26 @@ class ReproductionAgent:
                     f"--index-url https://download.pytorch.org/whl/cu{cuda_nd}"
                 )
 
+        import re as _re
+        _bad_ver = {"", "n/a", "none", "null", "N/A", "unknown", "—", "-"}
+        _ver_pat = _re.compile(r'^\d[\d.]*(\+\w+)?$')
+        other_deps = [d for d in deps
+                      if d["name"] not in ("torch", "torchvision")
+                      and d.get("ver", "") not in _bad_ver
+                      and _ver_pat.match(d.get("ver", ""))]
         if other_deps:
             pkg_list = " \\\n      ".join(f"{d['name']}=={d['ver']}" for d in other_deps)
             lines.append(f"RUN pip install --no-cache-dir \\\n      {pkg_list}")
-        else:
+        elif deps:
             lines.append("RUN pip install --no-cache-dir -r requirements.txt")
 
         lines += [
             "",
             "# determinism (auto-injected by repro-agent)",
             "ENV PYTHONHASHSEED=0 \\",
-            "    CUBLAS_WORKSPACE_CONFIG=:4096:8 \\",
             "    PYTHONDONTWRITEBYTECODE=1",
             "",
-            f'ENTRYPOINT ["python{python_ver}", "{entry}"]',
+            f'ENTRYPOINT ["{py_cmd}", "{entry}"]',
         ]
 
         dockerfile = "\n".join(lines)
@@ -328,10 +348,11 @@ Return only JSON."""
             f"- Risks: {len([r for r in risks if r.get('sev')=='high'])} high, "
             f"{len([r for r in risks if r.get('sev')=='medium'])} medium\n"
             f"- Entry point: {(analysis.get('entry_points') or ['train.py'])[0]}\n\n"
-            f"Be concise and specific. Use <b> for emphasis, <code> for inline code. "
+            f"Be concise and specific. Use **markdown** for emphasis and `backticks` for inline code. "
+            f"Use bullet lists (- item) for multi-part answers. "
             f"Always ground answers in the actual analysis data above."
         )
-        return await self._llm([{"role": "user", "content": message}], max_tokens=500, system=system)
+        return await self._llm([{"role": "user", "content": message}], max_tokens=1024, system=system)
 
     async def extract_repo_from_pdf(self, pdf_bytes: bytes) -> Optional[str]:
         """Extract GitHub URL from uploaded PDF (MCP PDF tool)."""

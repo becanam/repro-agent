@@ -3,7 +3,9 @@
 > **From PDF to running container in minutes.**  
 > Paste a GitHub repo or arXiv link. The agent reads the code, infers the environment, generates a pinned Dockerfile, and flags every reproduction risk before you spend a single GPU-hour.
 
-![ReproAgent workbench screenshot](docs/screenshot.png)
+![ReproAgent input screen](figures/image1.png)
+
+![ReproAgent workbench](figures/image2.png)
 
 ---
 
@@ -37,7 +39,7 @@ Repo Analysis → Dependency Resolution → Dockerfile Generation → Run Script
 
 | Layer | Technology |
 |---|---|
-| AI Agent | Claude (claude-sonnet-4-6) via Anthropic SDK |
+| AI Agent | openai/gpt-oss-20b:free via OpenRouter API |
 | Agent Platform | **Pi SDK** — skills, extensions, MCP tools |
 | Backend | FastAPI + uvicorn (Python) |
 | Frontend | React 18 + Babel (JSX in-browser) |
@@ -104,7 +106,7 @@ Declared in the Pi Extension (`extensions/repro-agent.ts`) as `mcpServers`.
 ### Prerequisites
 
 - Python 3.10+
-- `ANTHROPIC_API_KEY` environment variable set
+- `OPENROUTER_API_KEY` environment variable set
 - (Optional) `GITHUB_TOKEN` for higher GitHub API rate limits
 
 ### Setup
@@ -118,7 +120,7 @@ cd repro-agent
 pip install -r requirements.txt
 
 # Set API key
-export ANTHROPIC_API_KEY=your-key-here
+export OPENROUTER_API_KEY=your-key-here
 export GITHUB_TOKEN=your-token-here   # optional but recommended
 ```
 
