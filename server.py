@@ -190,8 +190,8 @@ async def analyze(req: AnalyzeRequest):
         env = {e["k"]: e["v"] for e in result.get("env_spec", [])}
         deps = result.get("dependencies", [])
         cuda = env.get("CUDA", "")
-        _no_cuda = {"none", "", "n/a", "no", "null", "unknown", "—", "-"}
-        if cuda.lower() in _no_cuda:
+        import re as _re
+        if not _re.match(r'^\d+\.\d+', cuda):
             variant = "cpu"
         else:
             variant = "cuda"

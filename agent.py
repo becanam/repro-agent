@@ -198,11 +198,11 @@ class ReproductionAgent:
         python_ver = env.get("Python", "") or "3.10"
         if python_ver.lower() in _na:
             python_ver = "3.10"
-        _bad_cuda = {"", "none", "n/a", "no", "null", "unknown", "—", "-"}
         cuda_ver = env.get("CUDA", "") or ""
-        if cuda_ver.lower() in _bad_cuda:
+        if not re.match(r'^\d+\.\d+', cuda_ver):
             cuda_ver = "11.8"
-        cudnn = (env.get("cuDNN", "8") or "8").split(".")[0]
+        cudnn_raw = (env.get("cuDNN", "8") or "8").split(".")[0]
+        cudnn = cudnn_raw if cudnn_raw.isdigit() else "8"
         cuda_nd = cuda_ver.replace(".", "")
 
         _na = ("", "n/a", "none", "null", "N/A")
