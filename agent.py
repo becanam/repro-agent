@@ -220,7 +220,10 @@ class ReproductionAgent:
                 f"      --index-url https://download.pytorch.org/whl/cpu"
             ) if torch_ver else None
         else:
-            base = f"nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-devel-ubuntu22.04"
+            # use devel only when the repo compiles custom CUDA extensions
+            file_txts = " ".join(n.get("txt", "") for n in analysis.get("file_tree", []))
+            cuda_layer = "devel" if ".cu" in file_txts else "runtime"
+            base = f"nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-{cuda_layer}-ubuntu22.04"
             torch_install = (
                 f"RUN pip install torch=={torch_ver}+cu{cuda_nd} \\\n"
                 f"      --index-url https://download.pytorch.org/whl/cu{cuda_nd}"
