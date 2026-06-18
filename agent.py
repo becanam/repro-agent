@@ -216,15 +216,18 @@ class ReproductionAgent:
         entry = entries[0] if entries else "train.py"
         name = repo.split("/")[-1].lower()
 
+        file_txts = " ".join(n.get("txt", "") for n in analysis.get("file_tree", []))
+        has_req_file = "requirements.txt" in file_txts
+
         if variant == "cpu":
             base = f"python:{python_ver}-slim-bookworm"
+            # CPU whl index uses plain version numbers (no +cpu) for torch < 2.6
             torch_install = (
-                f"RUN pip install torch=={torch_ver}+cpu \\\n"
+                f"RUN pip install torch=={torch_ver} \\\n"
                 f"      --index-url https://download.pytorch.org/whl/cpu"
             ) if torch_ver else None
         else:
             # use devel only when the repo compiles custom CUDA extensions
-            file_txts = " ".join(n.get("txt", "") for n in analysis.get("file_tree", []))
             cuda_layer = "devel" if ".cu" in file_txts else "runtime"
             base = f"nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-{cuda_layer}-ubuntu22.04"
             torch_install = (
@@ -267,7 +270,7 @@ class ReproductionAgent:
         if tv_ver:
             if variant == "cpu":
                 lines.append(
-                    f"RUN pip install torchvision=={tv_ver}+cpu "
+                    f"RUN pip install torchvision=={tv_ver} "
                     f"--index-url https://download.pytorch.org/whl/cpu"
                 )
             else:
@@ -286,7 +289,7 @@ class ReproductionAgent:
         if other_deps:
             pkg_list = " \\\n      ".join(f"{d['name']}=={d['ver']}" for d in other_deps)
             lines.append(f"RUN pip install --no-cache-dir \\\n      {pkg_list}")
-        elif deps:
+        elif has_req_file:
             lines.append("RUN pip install --no-cache-dir -r requirements.txt")
 
         lines += [
