@@ -203,9 +203,17 @@ async def analyze(req: AnalyzeRequest):
         repo = result.get("paper", {}).get("repo", "owner/repo")
         name = repo.split("/")[-1]
         deps = result.get("dependencies", [])
+        import re as _re2
+        _ver_pat2 = _re2.compile(r'^\d[\d.]*(\+\w+)?$')
         _na_vers = {"", "n/a", "none", "null", "unknown", "N/A"}
+        _skip = {"torch", "torchvision"}  # need special index URLs, not pip-installable directly
         pinned_lines = [f"# Pinned for {name} reproduction"]
-        pinned_deps = [f"{d['name']}=={d['ver']}" for d in deps if d.get("ver","") not in _na_vers]
+        pinned_deps = [
+            f"{d['name']}=={d['ver']}" for d in deps
+            if d["name"] not in _skip
+            and d.get("ver", "") not in _na_vers
+            and _ver_pat2.match(d.get("ver", ""))
+        ]
         if pinned_deps:
             pinned_lines += pinned_deps
         else:
@@ -222,10 +230,11 @@ async def analyze(req: AnalyzeRequest):
             "set -euo pipefail",
             "",
             f'echo "==> Cloning repository..."',
+            "rm -rf _repo_src",
             f"git clone https://github.com/{repo} _repo_src",
             "",
-            f'echo "==> Copying reproduction files into repo..."',
-            "cp Dockerfile requirements-pinned.txt REPRO_NOTES.md _repo_src/ 2>/dev/null || true",
+            f'echo "==> Copying Dockerfile into repo..."',
+            "cp Dockerfile _repo_src/",
             "cd _repo_src",
             "",
             f'echo "==> Building Docker image..."',

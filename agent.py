@@ -177,6 +177,9 @@ class ReproductionAgent:
         # Steps 3–5: LLM analysis
         result = await self._llm_analyze(repo_slug, repo_data, arxiv_data)
 
+        # Attach real file paths so generate_dockerfile can check requirements.txt reliably
+        result["_repo_paths"] = repo_data.get("all_paths", [])
+
         # Cache session context
         session_id = repo_slug.replace("/", "_")
         self._sessions[session_id] = {
@@ -217,7 +220,12 @@ class ReproductionAgent:
         name = repo.split("/")[-1].lower()
 
         file_txts = " ".join(n.get("txt", "") for n in analysis.get("file_tree", []))
-        has_req_file = "requirements.txt" in file_txts
+        # prefer real GitHub file paths over LLM file_tree (LLM often hallucinates requirements.txt)
+        real_paths = analysis.get("_repo_paths", [])
+        has_req_file = (
+            any(p == "requirements.txt" or p.endswith("/requirements.txt") for p in real_paths)
+            if real_paths else "requirements.txt" in file_txts
+        )
 
         if variant == "cpu":
             base = f"python:{python_ver}-slim-bookworm"
@@ -292,14 +300,12 @@ class ReproductionAgent:
         elif has_req_file:
             lines.append("RUN pip install --no-cache-dir -r requirements.txt")
 
-        lines += [
-            "",
-            "# determinism (auto-injected by repro-agent)",
-            "ENV PYTHONHASHSEED=0 \\",
-            "    PYTHONDONTWRITEBYTECODE=1",
-            "",
-            f'ENTRYPOINT ["{py_cmd}", "{entry}"]',
-        ]
+        if variant == "cuda":
+            det_env = ["ENV PYTHONHASHSEED=0 \\", "    CUBLAS_WORKSPACE_CONFIG=:4096:8 \\", "    PYTHONDONTWRITEBYTECODE=1"]
+        else:
+            det_env = ["ENV PYTHONHASHSEED=0 \\", "    PYTHONDONTWRITEBYTECODE=1"]
+
+        lines += ["", "# determinism (auto-injected by repro-agent)"] + det_env + ["", f'ENTRYPOINT ["{py_cmd}", "{entry}"]']
 
         dockerfile = "\n".join(lines)
         est_gb = 1.8 if variant == "cpu" else 6.8
@@ -438,7 +444,7 @@ Return a single JSON object with ALL of these fields:
   }},
   "dependencies": [
     {{"name": "torch", "ver": "2.1.0+cu118", "inferred": false}},
-    {{"name": "numpy", "ver": "1.26.x", "inferred": true}}
+    {{"name": "numpy", "ver": "1.26.4", "inferred": false}}
   ],
   "hyperparams": [
     {{"name": "optimizer", "val": "AdamW", "src": "config"}},
@@ -455,7 +461,7 @@ Return a single JSON object with ALL of these fields:
   "file_tree": [
     {{"t": "dir", "txt": "{repo.split('/')[1]}/", "indent": 0}},
     {{"t": "entry", "txt": "train.py", "indent": 1, "tag": "entry"}},
-    {{"t": "file", "txt": "requirements.txt", "indent": 1, "tag": null}}
+    {{"t": "file", "txt": "config.yaml", "indent": 1, "tag": null}}
   ],
   "entry_points": ["train.py"],
   "run_procedure": [
@@ -497,7 +503,7 @@ Return only valid JSON."""
     @staticmethod
     def _strip_json(text: str) -> str:
         text = text.strip()
-        text = re.sub(r"^```[a-z]*\n?", "", text)
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
         text = re.sub(r"\n?```$", "", text)
         return text.strip()
 

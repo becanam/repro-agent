@@ -762,8 +762,12 @@ function App() {
   };
 
   const handleAnalyzeDone = (data) => {
-    // Build session from real data or fall through to mock
-    const base = data || MOCK_SESSION;
+    if (!data || !data.files || Object.keys(data.files).length === 0) {
+      alert("Analysis failed or timed out. Check the server logs and try again.");
+      setView("input");
+      return;
+    }
+    const base = data;
     const sess = {
       id: (base.paper?.repo || base.repo || inputVal).replace(/[^a-z0-9]/gi, "-").toLowerCase() + "-" + Date.now(),
       repo: base.paper?.repo || base.repo || inputVal,
@@ -772,9 +776,9 @@ function App() {
       stars: base.paper?.stars || base.stars || "",
       headline: base.paper?.headline || base.headline || "",
       created_at: new Date().toISOString(),
-      files: (base.files && Object.keys(base.files).length > 0) ? base.files : MOCK_SESSION.files,
-      risks: (base.risks && base.risks.length > 0) ? base.risks : [],
-      env_spec: (base.env_spec && base.env_spec.length > 0) ? base.env_spec : MOCK_SESSION.env_spec,
+      files: base.files,
+      risks: base.risks || [],
+      env_spec: base.env_spec || [],
       hardware_recs: base.hardware_recs || null,
     };
     saveSession(sess);
