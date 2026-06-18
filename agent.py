@@ -244,7 +244,7 @@ class ReproductionAgent:
             "      rm -rf /var/lib/apt/lists/*",
             "",
             "WORKDIR /workspace",
-            f"RUN git clone https://github.com/{repo} .",
+            "COPY . .",
             "",
         ]
 
