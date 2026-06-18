@@ -436,7 +436,13 @@ README (first 3000 chars):
 {repo_data.get('readme', '')[:3000]}
 
 requirements.txt:
-{repo_data.get('requirements', '')[:800]}
+{repo_data.get('requirements', '') or '(none)'}
+
+setup.py / pyproject.toml:
+{repo_data.get('setup_py', '') or '(none)'}
+
+environment.yml:
+{repo_data.get('env_yml', '') or '(none)'}
 
 File paths (first 40):
 {chr(10).join(repo_data.get('all_paths', [])[:40])}
@@ -494,7 +500,7 @@ Return a single JSON object with ALL of these fields:
 IMPORTANT:
 - Analyze the actual README and file list above; do NOT make up data.
 - Only set CUDA version if it is explicitly mentioned in the README or requirements.txt. If not mentioned, set {{"k":"CUDA","v":"none"}}.
-- Only list a dependency if it appears in requirements.txt, setup.py, or environment.yml. Do NOT infer deps from import statements.
+- List dependencies from requirements.txt, setup.py, environment.yml, or README code/install examples. Include packages imported in the entry point if they are clearly third-party (not stdlib).
 - Dependency versions must be exact (e.g. "1.26.4"), never fuzzy (e.g. "1.26.x", "latest", "auto").
 Return only valid JSON."""
         text = self._strip_json(await self._llm([{"role": "user", "content": prompt}], max_tokens=4096))
