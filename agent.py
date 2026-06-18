@@ -208,12 +208,20 @@ class ReproductionAgent:
         cudnn = cudnn_raw if cudnn_raw.isdigit() else "8"
         cuda_nd = cuda_ver.replace(".", "")
 
-        _na = ("", "n/a", "none", "null", "N/A")
-        torch_dep = next((d for d in deps if d["name"] == "torch" and d.get("ver", "") not in _na), None)
-        torch_ver = torch_dep["ver"].split("+")[0] if torch_dep else None
-        tv_dep = next((d for d in deps if d["name"] == "torchvision" and d.get("ver", "") not in _na), None)
-        tv_ver = tv_dep["ver"].split("+")[0] if tv_dep else None
-        other_deps = [d for d in deps if d["name"] not in ("torch", "torchvision")]
+        _ver_re = re.compile(r'^\d[\d.]*')
+        _na_set = {"", "n/a", "none", "null", "N/A", "unknown", "auto", "latest", "—", "-"}
+
+        def _clean_ver(raw: str) -> str | None:
+            raw = raw.split("+")[0].strip()
+            return raw if raw not in _na_set and _ver_re.match(raw) else None
+
+        torch_dep = next((d for d in deps if d["name"] == "torch"), None)
+        torch_ver = _clean_ver(torch_dep.get("ver", "")) if torch_dep else None
+        torch_in_deps = torch_dep is not None
+
+        tv_dep = next((d for d in deps if d["name"] == "torchvision"), None)
+        tv_ver = _clean_ver(tv_dep.get("ver", "")) if tv_dep else None
+        tv_in_deps = tv_dep is not None
 
         entries = analysis.get("entry_points", [])
         real_paths = analysis.get("_repo_paths", [])
@@ -238,20 +246,21 @@ class ReproductionAgent:
 
         if variant == "cpu":
             base = f"python:{python_ver}-slim-bookworm"
-            # CPU whl index uses plain version numbers (no +cpu) for torch < 2.6
-            torch_install = (
-                f"RUN pip install torch=={torch_ver} \\\n"
-                f"      --index-url https://download.pytorch.org/whl/cpu"
-            ) if torch_ver else None
+            if torch_ver:
+                torch_install = f"RUN pip install torch=={torch_ver} \\\n      --index-url https://download.pytorch.org/whl/cpu"
+            elif torch_in_deps:
+                torch_install = "RUN pip install torch \\\n      --index-url https://download.pytorch.org/whl/cpu"
+            else:
+                torch_install = None
         else:
-            # use devel only when the repo compiles custom CUDA extensions
             cuda_layer = "devel" if ".cu" in file_txts else "runtime"
-            # --platform linux/amd64: CUDA wheels are x86_64 only (required on Apple Silicon)
-            base = f"--platform linux/amd64 nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-{cuda_layer}-ubuntu22.04"
-            torch_install = (
-                f"RUN pip install torch=={torch_ver}+cu{cuda_nd} \\\n"
-                f"      --index-url https://download.pytorch.org/whl/cu{cuda_nd}"
-            ) if torch_ver else None
+            base = f"--platform=linux/amd64 nvidia/cuda:{cuda_ver}.0-cudnn{cudnn}-{cuda_layer}-ubuntu22.04"
+            if torch_ver:
+                torch_install = f"RUN pip install torch=={torch_ver}+cu{cuda_nd} \\\n      --index-url https://download.pytorch.org/whl/cu{cuda_nd}"
+            elif torch_in_deps:
+                torch_install = f"RUN pip install torch \\\n      --index-url https://download.pytorch.org/whl/cu{cuda_nd}"
+            else:
+                torch_install = None
 
         # python:X.Y-slim images already have Python installed — only need git + pip
         # nvidia/cuda images need python to be installed explicitly
@@ -285,17 +294,13 @@ class ReproductionAgent:
         if torch_install:
             lines.append(torch_install)
 
-        if tv_ver:
+        if tv_in_deps:
             if variant == "cpu":
-                lines.append(
-                    f"RUN pip install torchvision=={tv_ver} "
-                    f"--index-url https://download.pytorch.org/whl/cpu"
-                )
+                pkg = f"torchvision=={tv_ver}" if tv_ver else "torchvision"
+                lines.append(f"RUN pip install {pkg} --index-url https://download.pytorch.org/whl/cpu")
             else:
-                lines.append(
-                    f"RUN pip install torchvision=={tv_ver}+cu{cuda_nd} "
-                    f"--index-url https://download.pytorch.org/whl/cu{cuda_nd}"
-                )
+                pkg = f"torchvision=={tv_ver}+cu{cuda_nd}" if tv_ver else "torchvision"
+                lines.append(f"RUN pip install {pkg} --index-url https://download.pytorch.org/whl/cu{cuda_nd}")
 
         import re as _re
         _bad_ver = {"", "n/a", "none", "null", "N/A", "unknown", "—", "-"}
